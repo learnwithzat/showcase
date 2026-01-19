@@ -1,9 +1,8 @@
 /** @format */
 
-// c:\Latest\2026\Online\showcase\src\lib\db.ts
 import mongoose from 'mongoose';
 
-const MONGODB_URI = process.env.MONGODB_URI!;
+const MONGODB_URI = process.env.MONGODB_URI;
 
 if (!MONGODB_URI) {
 	throw new Error(
@@ -17,13 +16,35 @@ interface MongooseCache {
 }
 
 declare global {
-	var mongoose: MongooseCache;
+	// eslint-disable-next-line no-var
+	var mongoose: MongooseCache | undefined;
 }
 
-let cached = global.mongoose;
+if (!global.mongoose) {
+	global.mongoose = { conn: null, promise: null };
+}
+const cached = global.mongoose;
 
-if (!cached) {
-	cached = global.mongoose = { conn: null, promise: null };
+const MAX_RETRIES = 3;
+const RETRY_DELAY_MS = 2000;
+
+async function connectWithRetry(uri: string, options: mongoose.ConnectOptions) {
+	let retries = MAX_RETRIES;
+	while (true) {
+		try {
+			return await mongoose.connect(uri, options);
+		} catch (error) {
+			retries--;
+			if (retries === 0) {
+				throw error;
+			}
+			// eslint-disable-next-line no-console
+			console.warn(
+				`Failed to connect to MongoDB. Retrying in ${RETRY_DELAY_MS}ms...`
+			);
+			await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
+		}
+	}
 }
 
 export async function connectToDatabase() {
@@ -32,14 +53,12 @@ export async function connectToDatabase() {
 	}
 
 	if (!cached.promise) {
-		const opts = {
+		const opts: mongoose.ConnectOptions = {
 			bufferCommands: false,
 			family: 4,
 		};
 
-		cached.promise = mongoose.connect(MONGODB_URI, opts).then((mongoose) => {
-			return mongoose;
-		});
+		cached.promise = connectWithRetry(MONGODB_URI!, opts);
 	}
 	try {
 		cached.conn = await cached.promise;

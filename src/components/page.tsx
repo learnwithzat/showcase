@@ -9,12 +9,13 @@ import { redirect, notFound } from 'next/navigation';
 export default async function EditProductPage({
 	params,
 }: {
-	params: Promise<{ id: string }>;
+	params: { id: string };
 }) {
 	const isAuthenticated = await checkAuth();
 	if (!isAuthenticated) redirect('/admin');
 
-	const { id } = await params;
+	const { id } = params;
+
 	const product = await getProductById(id);
 
 	if (!product) {
